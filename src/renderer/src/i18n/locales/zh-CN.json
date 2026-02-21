@@ -140,6 +140,8 @@
   },
   "settings": {
     "title": "设置",
+    "lightMode": "浅色模式",
+    "darkMode": "深色模式",
     "providers": {
       "title": "模型提供商",
       "add": "添加提供商",

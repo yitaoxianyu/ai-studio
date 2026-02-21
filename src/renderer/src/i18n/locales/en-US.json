@@ -140,6 +140,8 @@
   },
   "settings": {
     "title": "Settings",
+    "lightMode": "Light Mode",
+    "darkMode": "Dark Mode",
     "providers": {
       "title": "Model Providers",
       "add": "Add Provider",
