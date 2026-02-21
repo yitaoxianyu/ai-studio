@@ -9,7 +9,7 @@ import electronStoreStorage from './electronStoreStorage'
 const persistConfig = {
   key: 'ai-studio-root',
   storage: electronStoreStorage,
-  whitelist: ['conversations', 'assistants', 'settings', 'models'],
+  whitelist: ['conversations', 'settings', 'models'],
   timeout: 10000,
 }
 

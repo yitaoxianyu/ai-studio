@@ -2,12 +2,13 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector, useAppDispatch } from '../hooks/useRedux'
 import { addMessage, updateMessage, addConversation, deleteMessage } from '../store/slices/conversations'
-import { Send, Loader2, Bot, User, Sparkles, ArrowUp, Code, PenTool, Languages, Paperclip, Mic, Image } from 'lucide-react'
+import { Send, Loader2, Bot, User, Sparkles, ArrowUp, Code, PenTool, Languages, X } from 'lucide-react'
 import ChatService from '../services/ChatService'
 import MessageContent from '../components/Chat/MessageContent'
 import ModelSelector from '../components/Chat/ModelSelector'
 import ThinkingEffect from '../components/Chat/ThinkingEffect'
 import MessageActions from '../components/Chat/MessageActions'
+import UploadButton, { UploadedImage } from '../components/Chat/UploadButton'
 import { AssistantIcon } from '../store/slices/assistants'
 
 const assistantIconMap: Record<AssistantIcon, React.FC<{ className?: string }>> = {
@@ -24,7 +25,6 @@ const HomePage: React.FC = () => {
   const conversations = useAppSelector((state) => state.conversations.items)
   const activeConversationId = useAppSelector((state) => state.conversations.activeId)
   const assistants = useAppSelector((state) => state.assistants.items)
-  const activeAssistantId = useAppSelector((state) => state.assistants.activeId)
   const models = useAppSelector((state) => state.models.items)
   const activeModelId = useAppSelector((state) => state.models.activeId)
   const settings = useAppSelector((state) => state.settings)
@@ -32,11 +32,12 @@ const HomePage: React.FC = () => {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
+  const [attachments, setAttachments] = useState<Array<UploadedImage | { id: string; url: string; type: 'link' }>>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId)
-  const activeAssistant = assistants.find((a) => a.id === activeAssistantId)
+  const activeAssistant = assistants.find((a) => a.id === activeConversation?.assistantId) || assistants[0]
   const activeModel = models.find((m) => m.id === activeModelId)
 
   useEffect(() => {
@@ -160,6 +161,21 @@ const HomePage: React.FC = () => {
     }
   }
 
+  const handleImageSelect = (images: UploadedImage[]) => {
+    setAttachments((prev) => [...prev, ...images])
+  }
+
+  const handleLinkSubmit = (url: string) => {
+    setAttachments((prev) => [
+      ...prev,
+      { id: `link-${Date.now()}`, url, type: 'link' as const }
+    ])
+  }
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id))
+  }
+
   if (!activeConversation) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900">
@@ -280,56 +296,84 @@ const HomePage: React.FC = () => {
 
       <div className="border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
         <div className="max-w-3xl mx-auto">
-          <div className="flex items-center gap-3 mb-3 px-1">
+          <div className="flex items-center gap-2 mb-3 px-1">
             <ModelSelector />
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 dark:bg-gray-800 rounded-full">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {t('chat.assistant')}:
-              </span>
-              <span className="text-xs font-semibold text-primary">
+              {activeAssistant?.icon && (
+                React.createElement(assistantIconMap[activeAssistant.icon], { className: 'w-3.5 h-3.5 text-primary' })
+              )}
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
                 {activeAssistant?.nameKey ? t(activeAssistant.nameKey) : (activeAssistant?.name || t('chat.defaultAssistant'))}
               </span>
             </div>
           </div>
           
-          <div className="relative">
-            <div className="flex gap-3 items-end">
-              <div className="flex-1 relative">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={t('chat.inputPlaceholder')}
-                  className="w-full resize-none border border-gray-200 dark:border-gray-700 rounded-2xl px-4 py-3 pr-24 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-all duration-200"
-                  rows={1}
-                  disabled={isLoading}
-                  style={{ minHeight: '52px', maxHeight: '200px' }}
-                />
-                <div className="absolute right-2 bottom-2 flex items-center gap-1">
-                  <button
-                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                    title={t('chat.attachFile') || 'Attach file'}
+          <div className="relative bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-primary focus-within:border-transparent transition-all duration-200">
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 p-3 pb-0">
+                {attachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="relative group"
                   >
-                    <Paperclip className="w-4 h-4 text-gray-400" />
-                  </button>
-                  <button
-                    className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                    title={t('chat.image') || 'Image'}
-                  >
-                    <Image className="w-4 h-4 text-gray-400" />
-                  </button>
-                </div>
+                    {'type' in attachment && attachment.type === 'link' ? (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <Languages className="w-4 h-4 text-gray-500" />
+                        <span className="text-xs text-gray-600 dark:text-gray-300 max-w-[150px] truncate">
+                          {attachment.url}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveAttachment(attachment.id)}
+                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
+                        >
+                          <X className="w-3 h-3 text-gray-400" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+                        <img
+                          src={(attachment as UploadedImage).preview}
+                          alt={(attachment as UploadedImage).name}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          onClick={() => handleRemoveAttachment(attachment.id)}
+                          className="absolute top-0.5 right-0.5 p-0.5 bg-black/50 hover:bg-black/70 rounded-full transition-colors"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
+            )}
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('chat.inputPlaceholder')}
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-12 text-gray-800 dark:text-gray-200 focus:outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              rows={1}
+              disabled={isLoading}
+              style={{ minHeight: '52px', maxHeight: '200px' }}
+            />
+            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+              <UploadButton
+                onImageSelect={handleImageSelect}
+                onLinkSubmit={handleLinkSubmit}
+                disabled={isLoading}
+              />
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isLoading}
-                className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-primary hover:bg-primary-hover text-white rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                className="flex items-center justify-center w-8 h-8 bg-primary hover:bg-primary-hover text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <ArrowUp className="w-5 h-5" />
+                  <ArrowUp className="w-4 h-4" />
                 )}
               </button>
             </div>

@@ -23,6 +23,8 @@ class ChatService {
       case 'openai':
       case 'openrouter':
       case 'ollama':
+      case 'groq':
+      case 'deepseek':
       case 'custom':
         return this.sendOpenAICompatible(options)
       case 'anthropic':
@@ -35,11 +37,21 @@ class ChatService {
   }
 
   private async sendOpenAICompatible(options: ChatOptions): Promise<string> {
-    const { apiKey, baseUrl, model, messages, stream, onStream } = options
+    const { provider, apiKey, baseUrl, model, messages, stream, onStream } = options
+
+    const defaultBaseUrls: Record<string, string> = {
+      openai: 'https://api.openai.com/v1',
+      openrouter: 'https://openrouter.ai/api/v1',
+      groq: 'https://api.groq.com/openai/v1',
+      deepseek: 'https://api.deepseek.com/v1',
+      ollama: 'http://localhost:11434/v1',
+    }
+
+    const finalBaseUrl = baseUrl || defaultBaseUrls[provider] || 'https://api.openai.com/v1'
 
     const client = new OpenAI({
       apiKey: apiKey || 'dummy',
-      baseURL: baseUrl || 'https://api.openai.com/v1',
+      baseURL: finalBaseUrl,
       dangerouslyAllowBrowser: true,
     })
 

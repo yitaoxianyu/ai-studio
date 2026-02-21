@@ -6,6 +6,7 @@ import { setActiveModel } from '../store/slices/models'
 import { Save, Trash2, Plus, Eye, EyeOff, Check, ArrowLeft, Sun, Moon, Monitor, Globe, Zap, Server, Cpu } from 'lucide-react'
 import { Provider } from '../store/slices/settings'
 import { useNavigate } from 'react-router-dom'
+import ApiGuide from '../components/Settings/ApiGuide'
 
 const SettingsPage: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -71,6 +72,8 @@ const SettingsPage: React.FC = () => {
     anthropic: 'Anthropic',
     google: 'Google AI',
     openrouter: 'OpenRouter',
+    groq: t('provider.groq'),
+    deepseek: t('provider.deepseek'),
     ollama: t('provider.ollama'),
     custom: t('provider.custom'),
   }
@@ -115,6 +118,7 @@ const SettingsPage: React.FC = () => {
         <div className="p-4 space-y-6">
           {activeTab === 'providers' && (
             <div className="space-y-4">
+              <ApiGuide />
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('settings.providers.title')}</h2>
@@ -141,10 +145,12 @@ const SettingsPage: React.FC = () => {
                       className="input-field"
                     >
                       <option value="">{t('settings.providers.selectProvider')}</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="anthropic">Anthropic</option>
-                      <option value="google">Google AI</option>
-                      <option value="openrouter">OpenRouter</option>
+                      <option value="openai">{t('provider.openai')}</option>
+                      <option value="anthropic">{t('provider.anthropic')}</option>
+                      <option value="google">{t('provider.google')}</option>
+                      <option value="groq">{t('provider.groq')}</option>
+                      <option value="deepseek">{t('provider.deepseek')}</option>
+                      <option value="openrouter">{t('provider.openrouter')}</option>
                       <option value="ollama">{t('provider.ollama')}</option>
                       <option value="custom">{t('provider.custom')}</option>
                     </select>
