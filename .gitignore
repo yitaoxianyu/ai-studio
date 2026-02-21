@@ -34,3 +34,9 @@ coverage
 
 # Misc
 *.tsbuildinfo
+
+# Trae IDE
+.trae
+
+# Personal config
+.npmrc
