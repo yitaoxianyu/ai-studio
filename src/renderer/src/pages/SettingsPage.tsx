@@ -1,12 +1,68 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppSelector, useAppDispatch } from '../hooks/useRedux'
-import { addProvider, updateProvider, deleteProvider, setTheme, setLanguage } from '../store/slices/settings'
+import { addProvider, updateProvider, deleteProvider, setTheme, setLanguage, Provider } from '../store/slices/settings'
 import { setActiveModel } from '../store/slices/models'
-import { Save, Trash2, Plus, Eye, EyeOff, Check, ArrowLeft, Sun, Moon, Monitor, Globe, Zap, Server, Cpu } from 'lucide-react'
-import { Provider } from '../store/slices/settings'
+import { 
+  Search, Check, Eye, EyeOff, Plus, Trash2, Settings2, 
+  Cpu, Globe, Zap, Server, Bot, Sparkles, Brain, 
+  ChevronRight, ExternalLink, ToggleLeft, ToggleRight,
+  MessageSquare, Image, Wrench, Keyboard, Database, HelpCircle,
+  LayoutGrid, Monitor, Moon, Sun
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import ApiGuide from '../components/Settings/ApiGuide'
+
+// Provider icons mapping
+const providerIcons: Record<string, React.FC<{ className?: string }>> = {
+  openai: Sparkles,
+  anthropic: Brain,
+  google: Zap,
+  groq: Zap,
+  deepseek: Brain,
+  ollama: Server,
+  openrouter: Globe,
+  siliconflow: Cpu,
+  default: Bot,
+}
+
+// Provider colors
+const providerColors: Record<string, string> = {
+  openai: 'bg-emerald-500',
+  anthropic: 'bg-orange-500',
+  google: 'bg-blue-500',
+  groq: 'bg-purple-500',
+  deepseek: 'bg-indigo-500',
+  ollama: 'bg-gray-500',
+  openrouter: 'bg-cyan-500',
+  siliconflow: 'bg-pink-500',
+}
+
+// Left sidebar menu items
+const settingsMenuItems = [
+  { id: 'providers', label: 'Model Provider', icon: Server },
+  { id: 'default-model', label: 'Default Model', icon: Cpu },
+  { id: 'web-search', label: 'Web Search', icon: Globe },
+  { id: 'mcp-servers', label: 'MCP Servers', icon: Wrench },
+  { id: 'general', label: 'General Settings', icon: Settings2 },
+  { id: 'display', label: 'Display Settings', icon: Monitor },
+  { id: 'mini-apps', label: 'Mini Apps Settings', icon: LayoutGrid },
+  { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard },
+  { id: 'quick-assistant', label: 'Quick Assistant', icon: MessageSquare },
+  { id: 'quick-phrases', label: 'Quick Phrases', icon: MessageSquare },
+  { id: 'data', label: 'Data Settings', icon: Database },
+  { id: 'about', label: 'About & Feedback', icon: HelpCircle },
+]
+
+// Extended provider data with models
+interface ExtendedProvider extends Provider {
+  models: Array<{
+    id: string
+    name: string
+    group: string
+    description?: string
+    enabled: boolean
+  }>
+}
 
 const SettingsPage: React.FC = () => {
   const { t, i18n } = useTranslation()
@@ -14,391 +70,468 @@ const SettingsPage: React.FC = () => {
   const navigate = useNavigate()
   const settings = useAppSelector((state) => state.settings)
   const models = useAppSelector((state) => state.models.items)
-  const [activeTab, setActiveTab] = useState<'providers' | 'models' | 'general'>('providers')
-  const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({})
-  const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
+  
+  const [activeMenuItem, setActiveMenuItem] = useState('providers')
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showApiKey, setShowApiKey] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<ExtendedProvider | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
-  const handleAddProvider = () => {
-    setEditingProvider({
-      id: Date.now().toString(),
-      name: '',
-      apiKey: '',
-      baseUrl: '',
-      enabled: true,
+  // Group models by their group
+  const groupModels = (providerModels: typeof models) => {
+    const groups: Record<string, typeof models> = {}
+    providerModels.forEach((model) => {
+      const group = model.provider
+      if (!groups[group]) groups[group] = []
+      groups[group].push(model)
+    })
+    return groups
+  }
+
+  // Get provider display name
+  const getProviderName = (id: string) => {
+    const names: Record<string, string> = {
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      google: 'Google AI',
+      groq: 'Groq',
+      deepseek: 'DeepSeek',
+      ollama: 'Ollama',
+      openrouter: 'OpenRouter',
+      siliconflow: 'SiliconFlow',
+    }
+    return names[id] || id
+  }
+
+  // Filter providers based on search
+  const filteredProviders = useMemo(() => {
+    if (!searchQuery) return settings.providers
+    return settings.providers.filter((p) => 
+      getProviderName(p.name).toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [settings.providers, searchQuery])
+
+  // Get selected provider
+  const selectedProvider = useMemo(() => {
+    if (!selectedProviderId) return settings.providers[0] || null
+    return settings.providers.find((p) => p.id === selectedProviderId) || settings.providers[0] || null
+  }, [selectedProviderId, settings.providers])
+
+  // Get models for selected provider
+  const selectedProviderModels = useMemo(() => {
+    if (!selectedProvider) return []
+    return models.filter((m) => m.provider === selectedProvider.name)
+  }, [selectedProvider, models])
+
+  // Group models
+  const groupedModels = useMemo(() => groupModels(selectedProviderModels), [selectedProviderModels])
+
+  // Toggle group expansion
+  const toggleGroup = (group: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) {
+        next.delete(group)
+      } else {
+        next.add(group)
+      }
+      return next
     })
   }
 
+  // Handle provider toggle
+  const handleToggleProvider = (provider: Provider) => {
+    dispatch(updateProvider({ ...provider, enabled: !provider.enabled }))
+  }
+
+  // Handle add provider
+  const handleAddProvider = () => {
+    const newProvider: ExtendedProvider = {
+      id: Date.now().toString(),
+      name: 'openai',
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+      models: [],
+    }
+    setEditingProvider(newProvider)
+  }
+
+  // Handle save provider
   const handleSaveProvider = () => {
     if (!editingProvider) return
     if (editingProvider.name && editingProvider.apiKey) {
+      const { models, ...providerData } = editingProvider
       const existing = settings.providers.find((p) => p.id === editingProvider.id)
       if (existing) {
-        dispatch(updateProvider(editingProvider))
+        dispatch(updateProvider(providerData))
       } else {
-        dispatch(addProvider(editingProvider))
+        dispatch(addProvider(providerData))
       }
       setEditingProvider(null)
+      if (!selectedProviderId) {
+        setSelectedProviderId(editingProvider.id)
+      }
     }
   }
 
+  // Handle delete provider
   const handleDeleteProvider = (id: string) => {
     dispatch(deleteProvider(id))
+    if (selectedProviderId === id) {
+      setSelectedProviderId(null)
+    }
   }
 
+  // Handle theme change
   const handleThemeChange = (theme: 'light' | 'dark' | 'system') => {
     dispatch(setTheme(theme))
     if (theme === 'dark') {
       document.documentElement.classList.add('dark')
     } else if (theme === 'light') {
       document.documentElement.classList.remove('dark')
-    } else if (theme === 'system') {
+    } else {
       const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      if (isDark) {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-      }
+      document.documentElement.classList.toggle('dark', isDark)
     }
   }
 
+  // Handle language change
   const handleLanguageChange = (lang: string) => {
     i18n.changeLanguage(lang)
     dispatch(setLanguage(lang))
     localStorage.setItem('language', lang)
   }
 
-  const providerNames: Record<string, string> = {
-    openai: 'OpenAI',
-    anthropic: 'Anthropic',
-    google: 'Google AI',
-    openrouter: 'OpenRouter',
-    groq: t('provider.groq'),
-    deepseek: t('provider.deepseek'),
-    ollama: t('provider.ollama'),
-    custom: t('provider.custom'),
-  }
+  // Get provider icon
+  const ProviderIcon = selectedProvider 
+    ? (providerIcons[selectedProvider.name] || providerIcons.default)
+    : providerIcons.default
 
-  const tabs = [
-    { id: 'providers', label: t('settings.providers.title'), icon: Server },
-    { id: 'models', label: t('settings.models.title'), icon: Cpu },
-    { id: 'general', label: t('settings.general.title'), icon: Globe },
-  ] as const
+  // Get provider color
+  const providerColor = selectedProvider
+    ? (providerColors[selectedProvider.name] || 'bg-gray-500')
+    : 'bg-gray-500'
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-4xl mx-auto">
-        <div className="sticky top-0 bg-gray-50 dark:bg-gray-900 z-10 border-b border-gray-200 dark:border-gray-800">
-          <div className="flex items-center gap-3 p-4">
+    <div className="flex h-full bg-white dark:bg-gray-900">
+      {/* Left Sidebar - Settings Menu */}
+      <div className="w-56 border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex flex-col">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Settings</h1>
+        </div>
+        <div className="flex-1 overflow-y-auto py-2">
+          {settingsMenuItems.map((item) => (
             <button
-              onClick={() => navigate('/')}
-              className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-xl transition-colors duration-200"
+              key={item.id}
+              onClick={() => setActiveMenuItem(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+                activeMenuItem === item.id
+                  ? 'text-primary bg-primary/5 dark:bg-primary/10 font-medium'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <item.icon className="w-4 h-4" />
+              {item.label}
+              {activeMenuItem === item.id && (
+                <ChevronRight className="w-4 h-4 ml-auto" />
+              )}
             </button>
-            <h1 className="text-xl font-bold text-gray-800 dark:text-white">{t('settings.title')}</h1>
-          </div>
-          <div className="flex gap-1 px-4 pb-3">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 ${
-                  activeTab === tab.id
-                    ? 'bg-white dark:bg-gray-800 text-primary shadow-soft'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
+          ))}
+        </div>
+      </div>
+
+      {/* Middle Panel - Provider List */}
+      <div className="w-72 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search Providers..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-gray-100 dark:bg-gray-800 border-0 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+            />
           </div>
         </div>
-
-        <div className="p-4 space-y-6">
-          {activeTab === 'providers' && (
-            <div className="space-y-4">
-              <ApiGuide />
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('settings.providers.title')}</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('settings.providers.description')}</p>
+        <div className="flex-1 overflow-y-auto">
+          {filteredProviders.map((provider) => {
+            const Icon = providerIcons[provider.name] || providerIcons.default
+            const isSelected = selectedProvider?.id === provider.id
+            return (
+              <button
+                key={provider.id}
+                onClick={() => setSelectedProviderId(provider.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-gray-100 dark:border-gray-800 ${
+                  isSelected
+                    ? 'bg-primary/5 dark:bg-primary/10'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-lg ${providerColors[provider.name] || 'bg-gray-500'} flex items-center justify-center`}>
+                  <Icon className="w-4 h-4 text-white" />
                 </div>
-                <button
-                  onClick={handleAddProvider}
-                  className="btn-primary"
-                >
-                  <Plus className="w-4 h-4" />
-                  {t('settings.providers.add')}
-                </button>
-              </div>
-
-              {editingProvider && (
-                <div className="card p-5 space-y-4 animate-fade-in">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      {t('settings.providers.providerName')}
-                    </label>
-                    <select
-                      value={editingProvider.name}
-                      onChange={(e) => setEditingProvider({ ...editingProvider, name: e.target.value })}
-                      className="input-field"
-                    >
-                      <option value="">{t('settings.providers.selectProvider')}</option>
-                      <option value="openai">{t('provider.openai')}</option>
-                      <option value="anthropic">{t('provider.anthropic')}</option>
-                      <option value="google">{t('provider.google')}</option>
-                      <option value="groq">{t('provider.groq')}</option>
-                      <option value="deepseek">{t('provider.deepseek')}</option>
-                      <option value="openrouter">{t('provider.openrouter')}</option>
-                      <option value="ollama">{t('provider.ollama')}</option>
-                      <option value="custom">{t('provider.custom')}</option>
-                    </select>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {getProviderName(provider.name)}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      {t('settings.providers.apiKey')}
-                    </label>
+                </div>
+                {provider.enabled && (
+                  <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full">
+                    ON
+                  </span>
+                )}
+              </button>
+            )
+          })}
+          {filteredProviders.length === 0 && (
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+              No providers found
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+          <button
+            onClick={handleAddProvider}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Right Panel - Provider Details */}
+      <div className="flex-1 bg-gray-50/50 dark:bg-gray-900/50 overflow-y-auto">
+        {selectedProvider ? (
+          <div className="p-6 space-y-6">
+            {/* Provider Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl ${providerColor} flex items-center justify-center shadow-lg`}>
+                  <ProviderIcon className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    {getProviderName(selectedProvider.name)}
+                  </h2>
+                  <a 
+                    href="#" 
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    Docs
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+              <button
+                onClick={() => handleToggleProvider(selectedProvider)}
+                className="text-3xl"
+              >
+                {selectedProvider.enabled ? (
+                  <ToggleRight className="w-12 h-8 text-primary" />
+                ) : (
+                  <ToggleLeft className="w-12 h-8 text-gray-400" />
+                )}
+              </button>
+            </div>
+
+            {/* API Key Section */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                API Key
+              </label>
+              {editingProvider && editingProvider.id === selectedProvider.id ? (
+                <div className="space-y-3">
+                  <div className="relative">
                     <input
-                      type="password"
+                      type={showApiKey ? 'text' : 'password'}
                       value={editingProvider.apiKey}
                       onChange={(e) => setEditingProvider({ ...editingProvider, apiKey: e.target.value })}
-                      className="input-field"
-                      placeholder={t('settings.providers.apiKeyPlaceholder')}
+                      placeholder="Enter your API key"
+                      className="w-full px-4 py-2.5 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none pr-20"
                     />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                    >
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      {t('settings.providers.baseUrl')} ({t('common.optional')})
-                    </label>
-                    <input
-                      type="text"
-                      value={editingProvider.baseUrl || ''}
-                      onChange={(e) => setEditingProvider({ ...editingProvider, baseUrl: e.target.value })}
-                      className="input-field"
-                      placeholder={t('settings.providers.baseUrlPlaceholder')}
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2">
                     <button
                       onClick={handleSaveProvider}
-                      className="btn-primary"
+                      className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90"
                     >
-                      <Save className="w-4 h-4" />
-                      {t('common.save')}
+                      Save
                     </button>
                     <button
                       onClick={() => setEditingProvider(null)}
-                      className="btn-secondary"
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
                     >
-                      {t('common.cancel')}
+                      Cancel
                     </button>
                   </div>
-                </div>
-              )}
-
-              {settings.providers.length === 0 && !editingProvider ? (
-                <div className="card p-8 text-center">
-                  <Server className="w-12 h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-                  <p className="text-gray-500 dark:text-gray-400">{t('settings.providers.noProviders')}</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {settings.providers.map((provider) => (
-                    <div
-                      key={provider.id}
-                      className="card flex items-center justify-between p-4 hover:shadow-medium transition-shadow duration-200"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-800 dark:text-white">
-                          {providerNames[provider.name] || provider.name}
-                        </h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 font-mono mt-1 truncate">
-                          {showApiKey[provider.id] ? provider.apiKey : '••••••••••••••••'}
-                        </p>
-                        {provider.baseUrl && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 truncate">{provider.baseUrl}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 ml-4">
-                        <button
-                          onClick={() => setShowApiKey({ ...showApiKey, [provider.id]: !showApiKey[provider.id] })}
-                          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
-                          title={showApiKey[provider.id] ? t('settings.providers.hide') : t('settings.providers.show')}
-                        >
-                          {showApiKey[provider.id] ? (
-                            <EyeOff className="w-4 h-4 text-gray-400" />
-                          ) : (
-                            <Eye className="w-4 h-4 text-gray-400" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => setEditingProvider(provider)}
-                          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
-                          title={t('common.edit')}
-                        >
-                          <Save className="w-4 h-4 text-gray-400" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProvider(provider.id)}
-                          className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors duration-200"
-                          title={t('common.delete')}
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-mono text-gray-600 dark:text-gray-400">
+                    {selectedProvider.apiKey ? '••••••••••••••••' : 'Not configured'}
+                  </div>
+                  <button
+                    onClick={() => setEditingProvider({ ...selectedProvider, models: [] })}
+                    className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {/* TODO: Check API key */}}
+                    className="px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90"
+                  >
+                    Check
+                  </button>
                 </div>
               )}
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                <a href="#" className="text-primary hover:underline">Get API Key</a>
+                {' '}•{' '}
+                <a href="#" className="text-primary hover:underline">Charge</a>
+              </p>
             </div>
-          )}
 
-          {activeTab === 'models' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('settings.models.title')}</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('settings.models.description')}</p>
+            {/* API Host Section */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                API Host
+              </label>
+              {editingProvider && editingProvider.id === selectedProvider.id ? (
+                <input
+                  type="text"
+                  value={editingProvider.baseUrl || ''}
+                  onChange={(e) => setEditingProvider({ ...editingProvider, baseUrl: e.target.value })}
+                  placeholder="https://api.example.com/v1"
+                  className="w-full px-4 py-2.5 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
+                />
+              ) : (
+                <div className="px-4 py-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-600 dark:text-gray-400">
+                  {selectedProvider.baseUrl || `https://api.${selectedProvider.name}.com/v1`}
+                </div>
+              )}
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Ending with / ignores v1, ending with # forces use of input address
+              </p>
+            </div>
+
+            {/* Models Section */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Models
+                </label>
+                <button className="text-gray-400 hover:text-gray-600">
+                  <Search className="w-4 h-4" />
+                </button>
               </div>
-              <div className="space-y-4">
-                {Object.entries(
-                  models.reduce((acc, model) => {
-                    if (!acc[model.provider]) acc[model.provider] = []
-                    acc[model.provider].push(model)
-                    return acc
-                  }, {} as Record<string, typeof models>)
-                ).map(([provider, providerModels]) => (
-                  <div key={provider}>
-                    <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide px-1">
-                      {providerNames[provider] || provider}
-                    </h3>
-                    <div className="space-y-2">
-                      {providerModels.map((model) => (
-                        <div
-                          key={model.id}
-                          onClick={() => dispatch(setActiveModel(model.id))}
-                          className={`card flex items-center justify-between p-4 cursor-pointer transition-all duration-200 ${
-                            settings.defaultModel === model.id
-                              ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-900/20'
-                              : 'hover:shadow-medium'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors duration-200 ${
-                              settings.defaultModel === model.id
-                                ? 'border-primary bg-primary'
-                                : 'border-gray-300 dark:border-gray-600'
-                            }`}>
-                              {settings.defaultModel === model.id && (
-                                <Check className="w-3 h-3 text-white" />
-                              )}
+              
+              <div className="space-y-3">
+                {Object.entries(groupedModels).map(([group, groupModels]) => (
+                  <div key={group} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => toggleGroup(group)}
+                      className="w-full flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-gray-800/50 text-left"
+                    >
+                      {expandedGroups.has(group) ? (
+                        <ChevronRight className="w-4 h-4 text-gray-400 rotate-90 transition-transform" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-gray-400 transition-transform" />
+                      )}
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
+                        {group}
+                      </span>
+                    </button>
+                    {expandedGroups.has(group) && (
+                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {groupModels.map((model) => (
+                          <div
+                            key={model.id}
+                            className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center">
+                                <Sparkles className="w-3 h-3 text-primary" />
+                              </div>
+                              <div>
+                                <div className="text-sm text-gray-900 dark:text-white">
+                                  {model.nameKey ? t(model.nameKey) : model.name}
+                                </div>
+                                {model.name.includes('embedding') && (
+                                  <span className="text-xs px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded">
+                                    Embedding
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <h4 className="font-medium text-gray-800 dark:text-white">{model.nameKey ? t(model.nameKey) : model.name}</h4>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                {Math.floor(model.contextWindow / 1000)}{t('settings.models.contextWindow')}
-                              </p>
+                            <div className="flex items-center gap-2">
+                              <button className="p-1 text-gray-400 hover:text-gray-600">
+                                <Settings2 className="w-4 h-4" />
+                              </button>
+                              <button className="p-1 text-gray-400 hover:text-red-500">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
-                          {settings.defaultModel === model.id && (
-                            <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded-full">{t('settings.models.active')}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'general' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">{t('settings.general.theme')}</h2>
-                <div className="grid grid-cols-3 gap-3">
-                  {([
-                    { id: 'light', label: t('settings.general.light'), icon: Sun },
-                    { id: 'dark', label: t('settings.general.dark'), icon: Moon },
-                    { id: 'system', label: t('settings.general.system'), icon: Monitor },
-                  ] as const).map((theme) => (
-                    <button
-                      key={theme.id}
-                      onClick={() => handleThemeChange(theme.id)}
-                      className={`card flex flex-col items-center gap-3 p-5 transition-all duration-200 ${
-                        settings.theme === theme.id
-                          ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-900/20'
-                          : 'hover:shadow-medium'
-                      }`}
-                    >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        settings.theme === theme.id
-                          ? 'bg-primary text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                      }`}>
-                        <theme.icon className="w-5 h-5" />
-                      </div>
-                      <span className="text-sm font-medium text-gray-800 dark:text-white">{theme.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">{t('settings.general.language')}</h2>
-                <div className="space-y-2">
-                  {[
-                    { id: 'zh-CN', label: '简体中文' },
-                    { id: 'en-US', label: 'English' },
-                  ].map((lang) => (
-                    <button
-                      key={lang.id}
-                      onClick={() => handleLanguageChange(lang.id)}
-                      className={`card w-full flex items-center justify-between p-4 transition-all duration-200 ${
-                        settings.language === lang.id || (!settings.language && lang.id === 'zh-CN')
-                          ? 'ring-2 ring-primary bg-blue-50 dark:bg-blue-900/20'
-                          : 'hover:shadow-medium'
-                      }`}
-                    >
-                      <span className="font-medium text-gray-800 dark:text-white">{lang.label}</span>
-                      {(settings.language === lang.id || (!settings.language && lang.id === 'zh-CN')) && (
-                        <Check className="w-5 h-5 text-primary" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">{t('settings.general.streamResponse')}</h2>
-                <div className="card p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Zap className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-gray-800 dark:text-white">{t('settings.general.streamResponse')}</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                          {t('settings.general.streamResponseDesc')}
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.streamResponse}
-                        onChange={(e) => dispatch({ type: 'settings/setStreamResponse', payload: e.target.checked })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
-                    </label>
+                {selectedProviderModels.length === 0 && (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    No models available for this provider
                   </div>
-                </div>
+                )}
+              </div>
+              
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Check{' '}
+                  <a href="#" className="text-primary hover:underline">
+                    {getProviderName(selectedProvider.name)} Docs
+                  </a>
+                  {' '}and{' '}
+                  <a href="#" className="text-primary hover:underline">Models</a>
+                  {' '}for more details
+                </p>
+              </div>
+              
+              <div className="mt-4 flex gap-2">
+                <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90">
+                  <Settings2 className="w-4 h-4" />
+                  Manage
+                </button>
+                <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <Plus className="w-4 h-4" />
+                  Add
+                </button>
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Delete Provider */}
+            <button
+              onClick={() => handleDeleteProvider(selectedProvider.id)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Provider
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+            Select a provider to configure
+          </div>
+        )}
       </div>
     </div>
   )
